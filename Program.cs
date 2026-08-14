@@ -7,62 +7,71 @@ internal class Program
 {
     private static async Task Main(string[] args)
     {
+        // Ingresa tu Client ID y Client Secret del proyecto de Spotify. Para obtenerlos, visita https://developer.spotify.com/dashboard y crea una aplicación si aún no la tienes.
+
+        string clientId = "";
+        string clientSecret = "";
+
+        if(string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+        {
+            Console.WriteLine("El clientId o clientSecret no pueden ser nulos o vacios, revisa el MD.");
+            return;
+        }
+
         string carpetaDestino = "./Salida";
 
         if (!Directory.Exists(carpetaDestino))
             Directory.CreateDirectory(carpetaDestino);
 
-        DescargarVideoDesdeYouTube("https://www.youtube.com/watch?v=huW3K7105y8", carpetaDestino);
+        var accessToken = await ObtenerTokenSpotifyAsync(clientId, clientSecret);
 
-        // var accessToken = await ObtenerTokenSpotifyAsync();
+        Console.WriteLine("Ingresa el id de la playlist");
+        string? playlistId = "4RFCmMo7L3zJFEQKCGtv1R";
 
-        // Console.WriteLine("Ingresa el id de la playlist");
-        // string? playlistId = "4RFCmMo7L3zJFEQKCGtv1R";
+        if (string.IsNullOrEmpty(playlistId))
+        {
+            Console.WriteLine("El id de la playlist no puede ser nulo o vacio");
+            return;
+        }
 
-        // if (string.IsNullOrEmpty(playlistId))
-        // {
-        //     Console.WriteLine("El id de la playlist no puede ser nulo o vacio");
-        //     return;
-        // }
-
-        // if (string.IsNullOrEmpty(accessToken))
-        // {
-        //     Console.WriteLine("El clientId o clientSecret son incorrectos");
-        //     return;
-        // }
+        if (string.IsNullOrEmpty(accessToken))
+        {
+            Console.WriteLine("El clientId o clientSecret son incorrectos");
+            return;
+        }
 
 
-        // var canciones = await ObtenerCancionesDePlaylistAsync(playlistId, accessToken);
+        var canciones = await ObtenerCancionesDePlaylistAsync(playlistId, accessToken);
 
-        // int exitosas = 0;
-        // int fallidas = 0;
-        // var errores = new List<(string Nombre, string Artista)>();
+        int exitosas = 0;
+        int fallidas = 0;
+        var errores = new List<(string Nombre, string Artista)>();
 
-        // foreach (var (Nombre, Artista) in canciones)
-        // {
-        //     bool exito = DescargarCancionDesdeYouTube(Nombre, Artista, carpetaDestino);
-        //     if (exito)
-        //     {
-        //         exitosas++;
-        //     }
-        //     else
-        //     {
-        //         fallidas++;
-        //         errores.Add((Nombre, Artista));
-        //     }
-        // }
+        foreach (var (Nombre, Artista) in canciones)
+        {
+            bool exito = DescargarCancionDesdeYouTube(Nombre, Artista, carpetaDestino);
+            if (exito)
+            {
+                exitosas++;
+            }
+            else
+            {
+                fallidas++;
+                errores.Add((Nombre, Artista));
+            }
+        }
 
-        // Console.WriteLine($"\nDescargas exitosas: {exitosas}");
-        // Console.WriteLine($"Descargas fallidas: {fallidas}");
+        Console.WriteLine($"\nDescargas exitosas: {exitosas}");
+        Console.WriteLine($"Descargas fallidas: {fallidas}");
 
-        // if (errores.Count > 0)
-        // {
-        //     Console.WriteLine("\nCanciones con error:");
-        //     foreach (var (Nombre, Artista) in errores)
-        //     {
-        //         Console.WriteLine($"- {Artista} - {Nombre}");
-        //     }
-        // }
+        if (errores.Count > 0)
+        {
+            Console.WriteLine("\nCanciones con error:");
+            foreach (var (Nombre, Artista) in errores)
+            {
+                Console.WriteLine($"- {Artista} - {Nombre}");
+            }
+        }
     }
 
     public static bool DescargarVideoDesdeYouTube(string urlYoutube, string carpetaDestino)
@@ -111,13 +120,8 @@ internal class Program
     }
 
 
-    public static async Task<string?> ObtenerTokenSpotifyAsync()
+    public static async Task<string?> ObtenerTokenSpotifyAsync(string clientId, string clientSecret)
     {
-#warning Ingresa tu Client ID y Client Secret del proyecto de Spotify. Para obtenerlos, visita https://developer.spotify.com/dashboard y crea una aplicación si aún no la tienes.
-
-        string clientId = "";
-        string clientSecret = "";
-
         using var client = new HttpClient();
         var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
@@ -164,8 +168,8 @@ internal class Program
 
                 if (track.ValueKind == JsonValueKind.Null) continue;
 
-                var nombre = track.GetProperty("name").GetString();
-                var artistas = track.GetProperty("artists")[0].GetProperty("name").GetString();
+                var nombre = track.GetProperty("name").GetString() ?? "";
+                var artistas = track.GetProperty("artists")[0].GetProperty("name").GetString() ?? "";
 
                 canciones.Add((nombre, artistas));
             }
