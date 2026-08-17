@@ -247,7 +247,6 @@ internal class Program
                     ? canalProp.GetString() ?? ""
                     : snippet.GetProperty("channelTitle").GetString() ?? "";
 
-                // El videoId real está aquí, sin costo extra de cuota
                 string? videoId = snippet.TryGetProperty("resourceId", out var resourceIdProp) &&
                                    resourceIdProp.TryGetProperty("videoId", out var videoIdProp)
                     ? videoIdProp.GetString()
@@ -265,7 +264,7 @@ internal class Program
         return canciones;
     }
 
-    // Metodo para descargar Videos
+    // Metodo viejo para descargar Videos
     // public static bool DescargarVideoDesdeYouTube(string urlYoutube, string carpetaDestino)
     // {
     //     string YtDlpPath = Path.Combine(AppContext.BaseDirectory, "tools", "yt-dlp.exe");
