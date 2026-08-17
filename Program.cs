@@ -12,13 +12,30 @@ internal class Program
     }
     private static async Task Main(string[] args)
     {
-        // Ingresa tu Client ID y Client Secret del proyecto de Spotify. Para obtenerlos, visita https://developer.spotify.com/dashboard y crea una aplicación si aún no la tienes.
-
-        Modo Modo = Modo.Youtube;
-
+        // Ingresa tu Client ID y Client Secret del proyecto de Spotify. Para obtenerlos, revisa el MD para mas información.
+        // O ingresa la key de la API de YT. Para obtenerla, revisa el MD para mas información.
         string clientId = "4c59cdbc255e44dbb890e1f941021ccb";
         string clientSecret = "f31701bc534f4bf595dde1fa6213bc27";
         string YtDataApiV3Key = "AIzaSyBq8wNIENeFfdKK2vSA_ZqVzg-pm_BwCrU";
+
+        Modo? ModoApp = null;
+
+        while (ModoApp == null)
+        {
+            Console.WriteLine("Seleccione modo:\n1) Spotify\n2) YT");
+            string? entrada = Console.ReadLine();
+
+            if (int.TryParse(entrada, out int opcion) && Enum.IsDefined(typeof(Modo), opcion))
+            {
+                ModoApp = (Modo)opcion;
+            }
+            else
+            {
+                Console.WriteLine("Opción no válida. Intente nuevamente.\n");
+            }
+        }
+
+        Console.WriteLine($"Modo elegido: {ModoApp}");
 
         string carpetaDestino = "./Salida";
 
@@ -27,7 +44,7 @@ internal class Program
 
         List<(string, string)> Canciones = [];
 
-        if (Modo == Modo.Spotify)
+        if (ModoApp == Modo.Spotify)
         {
             if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
             {
@@ -54,7 +71,7 @@ internal class Program
 
             Canciones = await ObtenerCancionesDePlaylistAsync(playlistId, accessToken);
         }
-        else if (Modo == Modo.Youtube)
+        else if (ModoApp == Modo.Youtube)
         {
             if (string.IsNullOrEmpty(YtDataApiV3Key))
             {
