@@ -14,6 +14,10 @@ internal class Program
     {
         // Ingresa tu Client ID y Client Secret del proyecto de Spotify. Para obtenerlos, revisa el MD para mas información.
         // O ingresa la key de la API de YT. Para obtenerla, revisa el MD para mas información.
+        Console.OutputEncoding = Encoding.UTF8;
+        Console.Clear();
+
+
         string clientId = "4c59cdbc255e44dbb890e1f941021ccb";
         string clientSecret = "f31701bc534f4bf595dde1fa6213bc27";
         string YtDataApiV3Key = "AIzaSyBq8wNIENeFfdKK2vSA_ZqVzg-pm_BwCrU";
@@ -69,6 +73,7 @@ internal class Program
                 return;
             }
 
+            Console.WriteLine($"Obteniendo canciones de la playlist {playlistId}...");
             Canciones = await ObtenerCancionesDePlaylistAsync(playlistId, accessToken);
         }
         else if (ModoApp == Modo.Youtube)
@@ -89,6 +94,7 @@ internal class Program
                 return;
             }
 
+            Console.WriteLine($"Obteniendo canciones de la playlist {playlistId}...");
             Canciones = await ObtenerCancionesDePlaylistYoutubeAsync(playlistId, YtDataApiV3Key);
         }
 
@@ -99,7 +105,8 @@ internal class Program
 
         foreach (var (Nombre, Artista) in Canciones)
         {
-            bool exito = DescargarCancionDesdeYouTube(Nombre, Artista, carpetaDestino);
+            string ArtistaProcesado = Artista.Replace("- Topic", "").ToString();
+            bool exito = DescargarCancionDesdeYouTube(Nombre, ArtistaProcesado, carpetaDestino);
             if (exito)
             {
                 exitosas++;
@@ -107,7 +114,7 @@ internal class Program
             else
             {
                 fallidas++;
-                errores.Add((Nombre, Artista));
+                errores.Add((Nombre, ArtistaProcesado));
             }
         }
 
@@ -259,6 +266,8 @@ internal class Program
 
         var startInfo = new ProcessStartInfo
         {
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
             FileName = YtDlpPath,
             Arguments = $"\"{urlYoutube}\" -o \"{carpetaDestino}/{nombreArchivo}\"",
             RedirectStandardOutput = true,
@@ -292,45 +301,80 @@ internal class Program
 
     public static bool DescargarCancionDesdeYouTube(string nombreCancion, string artista, string carpetaDestino)
     {
-        string YtDlpPath = Path.Combine(AppContext.BaseDirectory, "tools", "yt-dlp.exe");
         string ToolsPath = Path.Combine(AppContext.BaseDirectory, "tools");
-
-        if (!File.Exists(YtDlpPath) || !File.Exists(Path.Combine(ToolsPath, "ffmpeg.exe")))
+        string YtDlpPath = Path.Combine(ToolsPath, "yt-dlp.exe");
+        string QjsPath = Path.Combine(ToolsPath, "qjs.exe");
+        string FfmpegPath = Path.Combine(ToolsPath, "ffmpeg.exe");
+        var faltantes = new List<string>();
+        if (!File.Exists(YtDlpPath)) faltantes.Add("yt-dlp.exe");
+        if (!File.Exists(QjsPath)) faltantes.Add("qjs.exe");
+        if (!File.Exists(FfmpegPath)) faltantes.Add("ffmpeg.exe");
+        if (faltantes.Count > 0)
         {
-            Console.WriteLine("Faltan yt-dlp.exe o ffmpeg.exe en la carpeta tools.");
+            Console.WriteLine($"Falta(n) en la carpeta tools: {string.Join(", ", faltantes)}");
             return false;
         }
-
         string nombreArchivo = $"{artista} - {nombreCancion}".Replace("\"", "").Replace(":", "").Replace("?", "").Replace("/", "").Replace("\\", "");
         var busqueda = $"{nombreCancion} {artista} audio";
-
+        string jsRuntimeArg = File.Exists(QjsPath)
+            ? $"--js-runtimes \"quickjs:{QjsPath}\" --remote-components ejs:github"
+            : "";
         var startInfo = new ProcessStartInfo
         {
             FileName = YtDlpPath,
-            Arguments = $"ytsearch1:\"{busqueda}\" -x --audio-format mp3 -o \"{carpetaDestino}/{nombreArchivo}.%(ext)s\"",
+            Arguments = $"ytsearch1:\"{busqueda}\" -f \"bestaudio/best\" -x --audio-format mp3 " +
+                        $"--extractor-args \"youtube:player_client=tv,ios,web,android\" " +
+                        $"{jsRuntimeArg} " +
+                        $"-o \"{carpetaDestino}/{nombreArchivo}.%(ext)s\"",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
             UseShellExecute = false,
             CreateNoWindow = true
         };
 
         startInfo.Environment["PATH"] = ToolsPath + ";" + Environment.GetEnvironmentVariable("PATH");
-
+        
         var proceso = new Process { StartInfo = startInfo };
 
         try
         {
             proceso.Start();
             string output = proceso.StandardOutput.ReadToEnd();
-            string error = proceso.StandardError.ReadToEnd();
+            string stderrCompleto = proceso.StandardError.ReadToEnd();
             proceso.WaitForExit();
 
-            Console.WriteLine($"Descargado: {artista} - {nombreCancion}");
-            Console.WriteLine(output);
-            if (!string.IsNullOrWhiteSpace(error))
-                Console.WriteLine("Errores:\n" + error);
+            bool exito = proceso.ExitCode == 0;
 
-            return proceso.ExitCode == 0;
+            // Manejo de WARNS
+            var advertencias = new List<string>();
+            var erroresReales = new List<string>();
+
+            foreach (var linea in stderrCompleto.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var lineaLimpia = linea.TrimEnd('\r');
+                if (lineaLimpia.StartsWith("WARNING:"))
+                    advertencias.Add(lineaLimpia);
+                else if (lineaLimpia.StartsWith("ERROR:"))
+                    erroresReales.Add(lineaLimpia);
+                else if (!string.IsNullOrWhiteSpace(lineaLimpia))
+                    erroresReales.Add(lineaLimpia);
+            }
+
+            Console.WriteLine(exito
+                ? $"Descargado: {artista} - {nombreCancion}"
+                : $"FALLÓ: {artista} - {nombreCancion}");
+
+            Console.WriteLine(output);
+
+            if (advertencias.Count > 0)
+                Console.WriteLine("Advertencias:\n" + string.Join("\n", advertencias));
+
+            if (erroresReales.Count > 0)
+                Console.WriteLine("Errores:\n" + string.Join("\n", erroresReales));
+
+            return exito;
         }
         catch (Exception ex)
         {
