@@ -5,49 +5,82 @@ using System.Text.Json;
 
 internal class Program
 {
+    public enum Modo
+    {
+        Spotify = 1,
+        Youtube = 2
+    }
     private static async Task Main(string[] args)
     {
         // Ingresa tu Client ID y Client Secret del proyecto de Spotify. Para obtenerlos, visita https://developer.spotify.com/dashboard y crea una aplicación si aún no la tienes.
 
-        string clientId = "";
-        string clientSecret = "";
+        Modo Modo = Modo.Youtube;
 
-        if(string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
-        {
-            Console.WriteLine("El clientId o clientSecret no pueden ser nulos o vacios, revisa el MD.");
-            return;
-        }
+        string clientId = "4c59cdbc255e44dbb890e1f941021ccb";
+        string clientSecret = "f31701bc534f4bf595dde1fa6213bc27";
+        string YtDataApiV3Key = "AIzaSyBq8wNIENeFfdKK2vSA_ZqVzg-pm_BwCrU";
 
         string carpetaDestino = "./Salida";
 
         if (!Directory.Exists(carpetaDestino))
             Directory.CreateDirectory(carpetaDestino);
 
-        var accessToken = await ObtenerTokenSpotifyAsync(clientId, clientSecret);
+        List<(string, string)> Canciones = [];
 
-        Console.WriteLine("Ingresa el id de la playlist");
-        string? playlistId = "4RFCmMo7L3zJFEQKCGtv1R";
-
-        if (string.IsNullOrEmpty(playlistId))
+        if (Modo == Modo.Spotify)
         {
-            Console.WriteLine("El id de la playlist no puede ser nulo o vacio");
-            return;
+            if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+            {
+                Console.WriteLine("El clientId o clientSecret no pueden ser nulos o vacios, revisa el MD.");
+                return;
+            }
+
+            var accessToken = await ObtenerTokenSpotifyAsync(clientId, clientSecret);
+
+            Console.WriteLine("Ingresa el id de la playlist");
+            string? playlistId = Console.ReadLine() ?? "4RFCmMo7L3zJFEQKCGtv1R";
+
+            if (string.IsNullOrEmpty(playlistId))
+            {
+                Console.WriteLine("El id de la playlist no puede ser nulo o vacio");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                Console.WriteLine("El clientId o clientSecret son incorrectos");
+                return;
+            }
+
+            Canciones = await ObtenerCancionesDePlaylistAsync(playlistId, accessToken);
+        }
+        else if (Modo == Modo.Youtube)
+        {
+            if (string.IsNullOrEmpty(YtDataApiV3Key))
+            {
+                Console.WriteLine("La key de la API de YT no pueden ser nula o vacia, revisa el MD.");
+                return;
+            }
+
+            Console.WriteLine("Ingresa el id de la playlist");
+            string? playlistId = Console.ReadLine();
+            playlistId = string.IsNullOrEmpty(playlistId) ? "PLRY77yiPsKP8" : playlistId;
+
+            if (string.IsNullOrEmpty(playlistId))
+            {
+                Console.WriteLine("El id de la playlist no puede ser nulo o vacio");
+                return;
+            }
+
+            Canciones = await ObtenerCancionesDePlaylistYoutubeAsync(playlistId, YtDataApiV3Key);
         }
 
-        if (string.IsNullOrEmpty(accessToken))
-        {
-            Console.WriteLine("El clientId o clientSecret son incorrectos");
-            return;
-        }
-
-
-        var canciones = await ObtenerCancionesDePlaylistAsync(playlistId, accessToken);
 
         int exitosas = 0;
         int fallidas = 0;
         var errores = new List<(string Nombre, string Artista)>();
 
-        foreach (var (Nombre, Artista) in canciones)
+        foreach (var (Nombre, Artista) in Canciones)
         {
             bool exito = DescargarCancionDesdeYouTube(Nombre, Artista, carpetaDestino);
             if (exito)
@@ -73,52 +106,6 @@ internal class Program
             }
         }
     }
-
-    public static bool DescargarVideoDesdeYouTube(string urlYoutube, string carpetaDestino)
-    {
-        string YtDlpPath = Path.Combine(AppContext.BaseDirectory, "tools", "yt-dlp.exe");
-
-        if (!File.Exists(YtDlpPath))
-        {
-            Console.WriteLine("Falta yt-dlp.exe en la carpeta tools.");
-            return false;
-        }
-
-        string nombreArchivo = $"%(title)s.%(ext)s";
-
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = YtDlpPath,
-            Arguments = $"\"{urlYoutube}\" -o \"{carpetaDestino}/{nombreArchivo}\"",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        var proceso = new Process { StartInfo = startInfo };
-
-        try
-        {
-            proceso.Start();
-            string output = proceso.StandardOutput.ReadToEnd();
-            string error = proceso.StandardError.ReadToEnd();
-            proceso.WaitForExit();
-
-            Console.WriteLine($"Video descargado: {urlYoutube}");
-            Console.WriteLine(output);
-            if (!string.IsNullOrWhiteSpace(error))
-                Console.WriteLine("Errores:\n" + error);
-
-            return proceso.ExitCode == 0;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error al descargar el video: {ex.Message}");
-            return false;
-        }
-    }
-
 
     public static async Task<string?> ObtenerTokenSpotifyAsync(string clientId, string clientSecret)
     {
@@ -184,6 +171,107 @@ internal class Program
         return canciones;
     }
 
+    public static async Task<List<(string Nombre, string Artista)>> ObtenerCancionesDePlaylistYoutubeAsync(
+    string playlistId, string apiKey)
+    {
+        var canciones = new List<(string, string)>();
+        using var client = new HttpClient();
+
+        string? nextPageToken = null;
+
+        do
+        {
+            var url = $"https://www.googleapis.com/youtube/v3/playlistItems" +
+                       $"?part=snippet" +
+                       $"&maxResults=50" +
+                       $"&playlistId={playlistId}" +
+                       $"&key={apiKey}" +
+                       (nextPageToken != null ? $"&pageToken={nextPageToken}" : "");
+
+            var response = await client.GetAsync(url);
+            var json = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"Error al obtener canciones de YouTube: {json}");
+                break;
+            }
+
+            var data = JsonSerializer.Deserialize<JsonElement>(json);
+            var items = data.GetProperty("items");
+
+            foreach (var item in items.EnumerateArray())
+            {
+                var snippet = item.GetProperty("snippet");
+
+                if (snippet.TryGetProperty("title", out var titleProp) &&
+                    (titleProp.GetString() == "Deleted video" || titleProp.GetString() == "Private video"))
+                    continue;
+
+                var nombre = snippet.GetProperty("title").GetString() ?? "";
+
+                var artista = snippet.TryGetProperty("videoOwnerChannelTitle", out var canalProp)
+                    ? canalProp.GetString() ?? ""
+                    : snippet.GetProperty("channelTitle").GetString() ?? "";
+
+                canciones.Add((nombre, artista));
+            }
+
+            nextPageToken = data.TryGetProperty("nextPageToken", out var tokenProp)
+                ? tokenProp.GetString()
+                : null;
+
+        } while (!string.IsNullOrEmpty(nextPageToken));
+
+        return canciones;
+    }
+
+
+
+    public static bool DescargarVideoDesdeYouTube(string urlYoutube, string carpetaDestino)
+    {
+        string YtDlpPath = Path.Combine(AppContext.BaseDirectory, "tools", "yt-dlp.exe");
+
+        if (!File.Exists(YtDlpPath))
+        {
+            Console.WriteLine("Falta yt-dlp.exe en la carpeta tools.");
+            return false;
+        }
+
+        string nombreArchivo = $"%(title)s.%(ext)s";
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = YtDlpPath,
+            Arguments = $"\"{urlYoutube}\" -o \"{carpetaDestino}/{nombreArchivo}\"",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        var proceso = new Process { StartInfo = startInfo };
+
+        try
+        {
+            proceso.Start();
+            string output = proceso.StandardOutput.ReadToEnd();
+            string error = proceso.StandardError.ReadToEnd();
+            proceso.WaitForExit();
+
+            Console.WriteLine($"Video descargado: {urlYoutube}");
+            Console.WriteLine(output);
+            if (!string.IsNullOrWhiteSpace(error))
+                Console.WriteLine("Errores:\n" + error);
+
+            return proceso.ExitCode == 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error al descargar el video: {ex.Message}");
+            return false;
+        }
+    }
 
     public static bool DescargarCancionDesdeYouTube(string nombreCancion, string artista, string carpetaDestino)
     {
