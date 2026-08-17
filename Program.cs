@@ -2,6 +2,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 
 internal class Program
 {
@@ -14,13 +15,18 @@ internal class Program
     {
         // Ingresa tu Client ID y Client Secret del proyecto de Spotify. Para obtenerlos, revisa el MD para mas información.
         // O ingresa la key de la API de YT. Para obtenerla, revisa el MD para mas información.
+
         Console.OutputEncoding = Encoding.UTF8;
         Console.Clear();
 
+        var config = new ConfigurationBuilder()
+                    .SetBasePath(AppContext.BaseDirectory)
+                    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+                    .Build();
 
-        string clientId = "4c59cdbc255e44dbb890e1f941021ccb";
-        string clientSecret = "f31701bc534f4bf595dde1fa6213bc27";
-        string YtDataApiV3Key = "AIzaSyBq8wNIENeFfdKK2vSA_ZqVzg-pm_BwCrU";
+        string clientId = config["Spotify:ClientId"] ?? "";
+        string clientSecret = config["Spotify:ClientSecret"] ?? "";
+        string YtDataApiV3Key = config["YouTube:ApiKey"] ?? "";
 
         Modo? ModoApp = null;
 
