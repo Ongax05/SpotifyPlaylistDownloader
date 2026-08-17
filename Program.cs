@@ -125,6 +125,8 @@ internal class Program
                 fallidas++;
                 errores.Add((Nombre, ArtistaProcesado));
             }
+
+            MostrarProgreso(exitosas + fallidas, Canciones.Count);
         }
 
         Console.WriteLine($"\nDescargas exitosas: {exitosas}");
@@ -138,6 +140,16 @@ internal class Program
                 Console.WriteLine($"- {Artista} - {Nombre}");
             }
         }
+    }
+
+    static void MostrarProgreso(int actual, int total)
+    {
+        int ancho = 30;
+        double porcentaje = total > 0 ? (double)actual / total : 0;
+        int completado = (int)(ancho * porcentaje);
+
+        string barra = new string('█', completado) + new string('░', ancho - completado);
+        Console.WriteLine($"Progreso: [{barra}] {actual}/{total} ({porcentaje:P0})");
     }
 
     public static async Task<string?> ObtenerTokenSpotifyAsync(string clientId, string clientSecret)
@@ -357,42 +369,41 @@ internal class Program
 
         startInfo.Environment["PATH"] = ToolsPath + ";" + Environment.GetEnvironmentVariable("PATH");
 
-        var proceso = new Process { StartInfo = startInfo };
+        var proceso = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+
+        // Se imprime línea por línea, en tiempo real, a medida que yt-dlp las va generando
+        proceso.OutputDataReceived += (sender, e) =>
+        {
+            if (!string.IsNullOrEmpty(e.Data))
+                Console.WriteLine(e.Data);
+        };
+
+        proceso.ErrorDataReceived += (sender, e) =>
+        {
+            if (string.IsNullOrEmpty(e.Data)) return;
+
+            if (e.Data.StartsWith("WARNING:"))
+                Console.WriteLine($"[Advertencia] {e.Data}");
+            else if (e.Data.StartsWith("ERROR:"))
+                Console.WriteLine($"[Error] {e.Data}");
+            else
+                Console.WriteLine($"[Error] {e.Data}");
+        };
 
         try
         {
+            Console.WriteLine($"\nDescargando: {artista} - {nombreCancion}");
+
             proceso.Start();
-            string output = proceso.StandardOutput.ReadToEnd();
-            string stderrCompleto = proceso.StandardError.ReadToEnd();
+            proceso.BeginOutputReadLine();
+            proceso.BeginErrorReadLine();
             proceso.WaitForExit();
 
             bool exito = proceso.ExitCode == 0;
 
-            var advertencias = new List<string>();
-            var erroresReales = new List<string>();
-
-            foreach (var linea in stderrCompleto.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-            {
-                var lineaLimpia = linea.TrimEnd('\r');
-                if (lineaLimpia.StartsWith("WARNING:"))
-                    advertencias.Add(lineaLimpia);
-                else if (lineaLimpia.StartsWith("ERROR:"))
-                    erroresReales.Add(lineaLimpia);
-                else if (!string.IsNullOrWhiteSpace(lineaLimpia))
-                    erroresReales.Add(lineaLimpia);
-            }
-
             Console.WriteLine(exito
                 ? $"Descargado: {artista} - {nombreCancion}"
                 : $"FALLÓ: {artista} - {nombreCancion}");
-
-            Console.WriteLine(output);
-
-            if (advertencias.Count > 0)
-                Console.WriteLine("Advertencias:\n" + string.Join("\n", advertencias));
-
-            if (erroresReales.Count > 0)
-                Console.WriteLine("Errores:\n" + string.Join("\n", erroresReales));
 
             return exito;
         }
