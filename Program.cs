@@ -46,7 +46,7 @@ internal class Program
         if (!Directory.Exists(carpetaDestino))
             Directory.CreateDirectory(carpetaDestino);
 
-        List<(string, string)> Canciones = [];
+        List<(string Nombre, string Artista, string? VideoId)> Canciones = [];
 
         if (ModoApp == Modo.Spotify)
         {
@@ -74,7 +74,8 @@ internal class Program
             }
 
             Console.WriteLine($"Obteniendo canciones de la playlist {playlistId}...");
-            Canciones = await ObtenerCancionesDePlaylistAsync(playlistId, accessToken);
+            var CancionesSpotify = await ObtenerCancionesDePlaylistAsync(playlistId, accessToken);
+            Canciones = [.. CancionesSpotify.Select(c => (c.Nombre, c.Artista, (string?)null))];
         }
         else if (ModoApp == Modo.Youtube)
         {
@@ -103,10 +104,12 @@ internal class Program
         int fallidas = 0;
         var errores = new List<(string Nombre, string Artista)>();
 
-        foreach (var (Nombre, Artista) in Canciones)
+        foreach (var (Nombre, Artista, VideoId) in Canciones)
         {
             string ArtistaProcesado = Artista.Replace("- Topic", "").ToString();
-            bool exito = DescargarCancionDesdeYouTube(Nombre, ArtistaProcesado, carpetaDestino);
+            string? videoUrl = VideoId != null ? $"https://www.youtube.com/watch?v={VideoId}" : null;
+
+            bool exito = DescargarCancionDesdeYouTube(Nombre, ArtistaProcesado, carpetaDestino, videoUrl);
             if (exito)
             {
                 exitosas++;
@@ -195,10 +198,10 @@ internal class Program
         return canciones;
     }
 
-    public static async Task<List<(string Nombre, string Artista)>> ObtenerCancionesDePlaylistYoutubeAsync(
+    public static async Task<List<(string Nombre, string Artista, string? VideoId)>> ObtenerCancionesDePlaylistYoutubeAsync(
     string playlistId, string apiKey)
     {
-        var canciones = new List<(string, string)>();
+        var canciones = new List<(string, string, string?)>();
         using var client = new HttpClient();
 
         string? nextPageToken = null;
@@ -238,7 +241,13 @@ internal class Program
                     ? canalProp.GetString() ?? ""
                     : snippet.GetProperty("channelTitle").GetString() ?? "";
 
-                canciones.Add((nombre, artista));
+                // El videoId real está aquí, sin costo extra de cuota
+                string? videoId = snippet.TryGetProperty("resourceId", out var resourceIdProp) &&
+                                   resourceIdProp.TryGetProperty("videoId", out var videoIdProp)
+                    ? videoIdProp.GetString()
+                    : null;
+
+                canciones.Add((nombre, artista, videoId));
             }
 
             nextPageToken = data.TryGetProperty("nextPageToken", out var tokenProp)
@@ -250,56 +259,55 @@ internal class Program
         return canciones;
     }
 
+    // Metodo para descargar Videos
+    // public static bool DescargarVideoDesdeYouTube(string urlYoutube, string carpetaDestino)
+    // {
+    //     string YtDlpPath = Path.Combine(AppContext.BaseDirectory, "tools", "yt-dlp.exe");
 
+    //     if (!File.Exists(YtDlpPath))
+    //     {
+    //         Console.WriteLine("Falta yt-dlp.exe en la carpeta tools.");
+    //         return false;
+    //     }
 
-    public static bool DescargarVideoDesdeYouTube(string urlYoutube, string carpetaDestino)
-    {
-        string YtDlpPath = Path.Combine(AppContext.BaseDirectory, "tools", "yt-dlp.exe");
+    //     string nombreArchivo = $"%(title)s.%(ext)s";
 
-        if (!File.Exists(YtDlpPath))
-        {
-            Console.WriteLine("Falta yt-dlp.exe en la carpeta tools.");
-            return false;
-        }
+    //     var startInfo = new ProcessStartInfo
+    //     {
+    //         StandardOutputEncoding = Encoding.UTF8,
+    //         StandardErrorEncoding = Encoding.UTF8,
+    //         FileName = YtDlpPath,
+    //         Arguments = $"\"{urlYoutube}\" -o \"{carpetaDestino}/{nombreArchivo}\"",
+    //         RedirectStandardOutput = true,
+    //         RedirectStandardError = true,
+    //         UseShellExecute = false,
+    //         CreateNoWindow = true
+    //     };
 
-        string nombreArchivo = $"%(title)s.%(ext)s";
+    //     var proceso = new Process { StartInfo = startInfo };
 
-        var startInfo = new ProcessStartInfo
-        {
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-            FileName = YtDlpPath,
-            Arguments = $"\"{urlYoutube}\" -o \"{carpetaDestino}/{nombreArchivo}\"",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
+    //     try
+    //     {
+    //         proceso.Start();
+    //         string output = proceso.StandardOutput.ReadToEnd();
+    //         string error = proceso.StandardError.ReadToEnd();
+    //         proceso.WaitForExit();
 
-        var proceso = new Process { StartInfo = startInfo };
+    //         Console.WriteLine($"Video descargado: {urlYoutube}");
+    //         Console.WriteLine(output);
+    //         if (!string.IsNullOrWhiteSpace(error))
+    //             Console.WriteLine("Errores:\n" + error);
 
-        try
-        {
-            proceso.Start();
-            string output = proceso.StandardOutput.ReadToEnd();
-            string error = proceso.StandardError.ReadToEnd();
-            proceso.WaitForExit();
+    //         return proceso.ExitCode == 0;
+    //     }
+    //     catch (Exception ex)
+    //     {
+    //         Console.WriteLine($"Error al descargar el video: {ex.Message}");
+    //         return false;
+    //     }
+    // }
 
-            Console.WriteLine($"Video descargado: {urlYoutube}");
-            Console.WriteLine(output);
-            if (!string.IsNullOrWhiteSpace(error))
-                Console.WriteLine("Errores:\n" + error);
-
-            return proceso.ExitCode == 0;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error al descargar el video: {ex.Message}");
-            return false;
-        }
-    }
-
-    public static bool DescargarCancionDesdeYouTube(string nombreCancion, string artista, string carpetaDestino)
+    public static bool DescargarCancionDesdeYouTube(string nombreCancion, string artista, string carpetaDestino, string? videoUrl = null)
     {
         string ToolsPath = Path.Combine(AppContext.BaseDirectory, "tools");
         string YtDlpPath = Path.Combine(ToolsPath, "yt-dlp.exe");
@@ -314,15 +322,23 @@ internal class Program
             Console.WriteLine($"Falta(n) en la carpeta tools: {string.Join(", ", faltantes)}");
             return false;
         }
+
         string nombreArchivo = $"{artista} - {nombreCancion}".Replace("\"", "").Replace(":", "").Replace("?", "").Replace("/", "").Replace("\\", "");
-        var busqueda = $"{nombreCancion} {artista} audio";
+
+        // Si tenemos videoId/URL directa (modo YouTube), la usamos.
+        // Si no (modo Spotify), usamos búsqueda de yt-dlp.
+        string fuente = !string.IsNullOrEmpty(videoUrl)
+            ? $"\"{videoUrl}\""
+            : $"ytsearch1:\"{nombreCancion} {artista} audio\"";
+
         string jsRuntimeArg = File.Exists(QjsPath)
             ? $"--js-runtimes \"quickjs:{QjsPath}\" --remote-components ejs:github"
             : "";
+
         var startInfo = new ProcessStartInfo
         {
             FileName = YtDlpPath,
-            Arguments = $"ytsearch1:\"{busqueda}\" -f \"bestaudio/best\" -x --audio-format mp3 " +
+            Arguments = $"{fuente} -f \"bestaudio/best\" -x --audio-format mp3 " +
                         $"--extractor-args \"youtube:player_client=tv,ios,web,android\" " +
                         $"{jsRuntimeArg} " +
                         $"-o \"{carpetaDestino}/{nombreArchivo}.%(ext)s\"",
@@ -335,7 +351,7 @@ internal class Program
         };
 
         startInfo.Environment["PATH"] = ToolsPath + ";" + Environment.GetEnvironmentVariable("PATH");
-        
+
         var proceso = new Process { StartInfo = startInfo };
 
         try
@@ -347,7 +363,6 @@ internal class Program
 
             bool exito = proceso.ExitCode == 0;
 
-            // Manejo de WARNS
             var advertencias = new List<string>();
             var erroresReales = new List<string>();
 
